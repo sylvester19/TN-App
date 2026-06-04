@@ -60,17 +60,35 @@ const MOCK_NOTIFICATIONS = [
   { icon: 'clipboard', iconClass: 'blue', title: 'New Complaint Registered', body: 'Complaint AI-TN-1002 (Water Board) logged.', time: '1 hr ago', unread: true }
 ];
 
-// Helper to initialize local storage database with mock datasets
+// Helper to initialize local storage database
+// Version 2: removes pre-populated dummy complaints so only user-created ones appear
 export function initDB() {
-  if (!localStorage.getItem('tvk_initialized')) {
-    localStorage.setItem('tvk_complaints', JSON.stringify(MOCK_COMPLAINTS));
+  const CURRENT_VERSION = 'v2';
+  const storedVersion = localStorage.getItem('tvk_db_version');
+
+  if (storedVersion !== CURRENT_VERSION) {
+    // Migrate or fresh init: start with empty complaints, keep reference data
+    localStorage.setItem('tvk_complaints', JSON.stringify([]));
     localStorage.setItem('tvk_departments', JSON.stringify(MOCK_DEPARTMENTS));
     localStorage.setItem('tvk_emergencies', JSON.stringify(MOCK_EMERGENCIES));
     localStorage.setItem('tvk_officers', JSON.stringify(MOCK_OFFICERS));
     localStorage.setItem('tvk_ailogs', JSON.stringify(MOCK_AILOGS));
     localStorage.setItem('tvk_notifications', JSON.stringify(MOCK_NOTIFICATIONS));
-    localStorage.setItem('tvk_initialized', 'true');
+    localStorage.setItem('tvk_db_version', CURRENT_VERSION);
   }
+}
+
+// Manual reset (for testing): call window.resetDB() in browser console
+export function resetDB() {
+  localStorage.removeItem('tvk_db_version');
+  localStorage.setItem('tvk_complaints', JSON.stringify([]));
+  initDB();
+  notifyDBChange();
+  console.log('[DB] Reset complete. Complaints cleared, reference data restored.');
+}
+
+if (typeof window !== 'undefined') {
+  window.resetDB = resetDB;
 }
 
 // Event dispatcher to notify other components/tabs of database changes
