@@ -329,7 +329,7 @@ export default function UserApp() {
       title: complaintForm.title || `Issue reported at ${complaintForm.location || 'Chennai'}`,
       dept: complaintForm.dept,
       sev: complaintForm.sev,
-      desc: complaintForm.desc,
+      description: complaintForm.desc,
       location: complaintForm.location || 'Captured Location',
       photo: 'attached_image.jpg'
     };
@@ -952,7 +952,7 @@ export default function UserApp() {
                       <div style={{ fontSize: '12px', color: 'var(--g600)' }}>Dept: <strong>{selectedRequest.dept}</strong></div>
                       <div style={{ fontSize: '12px', color: 'var(--g600)', marginTop: '2px' }}>Area: {selectedRequest.location || 'Chennai'}</div>
                       <div style={{ fontSize: '12.5px', color: 'var(--g600)', marginTop: '8px', lineHeight: 1.5 }}>
-                        <strong>Description:</strong><br />{selectedRequest.desc}
+                        <strong>Description:</strong><br />{selectedRequest.description || selectedRequest.desc || ''}
                       </div>
                     </div>
 

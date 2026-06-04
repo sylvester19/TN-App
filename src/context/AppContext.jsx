@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db } from '../utils/db';
+import { supabase, isSupabaseConfigured } from '../utils/supabase';
 
 const AppContext = createContext();
 
@@ -10,7 +11,7 @@ export function AppProvider({ children }) {
   const [emergencies, setEmergencies] = useState([]);
   const [aiLogs, setAiLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  
+
   // Environment defaults for LLM (Vite: must be prefixed with VITE_)
   const envLlmKey = import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_LLM_API_KEY || '';
   const envLlmBaseUrl = import.meta.env.VITE_GROQ_BASE_URL || import.meta.env.VITE_LLM_BASE_URL || 'https://api.openai.com/v1';
@@ -28,13 +29,13 @@ export function AppProvider({ children }) {
     llmEnabled: localStorage.getItem('llm_enabled') !== 'false',
     llmThreshold: parseInt(localStorage.getItem('llm_threshold') || '40', 10)
   });
-  
+
   const [supabaseConnected, setSupabaseConnected] = useState(false);
   const [supConnectionLog, setSupConnectionLog] = useState([]);
 
-  // Load database state
-  const reloadState = () => {
-    setComplaints(db.getComplaints());
+  // Load database state (async for Supabase)
+  const reloadState = async () => {
+    setComplaints(await db.getComplaints());
     setDepartments(db.getDepartments());
     setOfficers(db.getOfficers());
     setEmergencies(db.getEmergencies());
@@ -54,9 +55,24 @@ export function AppProvider({ children }) {
     window.addEventListener('tvk_db_update', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
+    // Supabase realtime subscription for cross-device live sync
+    let channel = null;
+    if (isSupabaseConfigured()) {
+      channel = supabase
+        .channel('complaints-live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, (payload) => {
+          console.log('[Supabase Realtime] Change received:', payload.eventType);
+          reloadState();
+        })
+        .subscribe((status) => {
+          console.log('[Supabase Realtime] Subscription status:', status);
+        });
+    }
+
     return () => {
       window.removeEventListener('tvk_db_update', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
+      if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
@@ -79,15 +95,15 @@ export function AppProvider({ children }) {
   }, []);
 
   // Database operations
-  const addComplaint = (newCmp) => {
-    const created = db.saveComplaint(newCmp);
-    reloadState();
+  const addComplaint = async (newCmp) => {
+    const created = await db.saveComplaint(newCmp);
+    await reloadState();
     return created;
   };
 
-  const updateComplaint = (id, updates) => {
-    const updated = db.updateComplaint(id, updates);
-    reloadState();
+  const updateComplaint = async (id, updates) => {
+    const updated = await db.updateComplaint(id, updates);
+    await reloadState();
     return updated;
   };
 

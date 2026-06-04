@@ -755,7 +755,7 @@ export default function AdminApp() {
                 <div style={{ fontSize: '16px', fontWeight: 800 }}>{selectedComplaint.title}</div>
                 <div style={{ fontSize: '12px', color: 'var(--g600)', marginTop: '3px' }}>Area: {selectedComplaint.location} · Filed: {selectedComplaint.date}</div>
                 <div style={{ fontSize: '13px', color: 'var(--g800)', marginTop: '12px', borderTop: '1px solid var(--g200)', paddingTop: '12px', lineHeight: 1.6 }}>
-                  <strong>Description:</strong><br />{selectedComplaint.desc}
+                  <strong>Description:</strong><br />{selectedComplaint.description || selectedComplaint.desc || ''}
                 </div>
               </div>
 

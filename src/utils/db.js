@@ -1,5 +1,5 @@
-// Database wrapper using localStorage to simulate a database.
-// Supports dual-mode: simulated local database and live Supabase queries.
+// Database wrapper: Supabase for complaints (shared), localStorage for reference data.
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const MOCK_DEPARTMENTS = [
   { id: 1, name: 'Municipal Corporation', icon: 'city', complaints: 245, officers: 28, resolveRate: 76 },
@@ -19,14 +19,6 @@ const MOCK_DEPARTMENTS = [
   { id: 15, name: 'Rural Development', icon: 'tree-pine', complaints: 159, officers: 21, resolveRate: 86 },
   { id: 16, name: 'Social Welfare', icon: 'users', complaints: 67, officers: 22, resolveRate: 95 },
   { id: 17, name: 'Registration', icon: 'file-check', complaints: 56, officers: 8, resolveRate: 80 }
-];
-
-const MOCK_COMPLAINTS = [
-  { id: 'AI-TN-1001', title: 'Road damage on NH-44', dept: 'Municipal Corporation', status: 'In Progress', sev: 'High', date: '2026-06-03', desc: 'Large potholes causing accidents near Ambattur junction.', officer: 'Raj Kumar', ph: '9876543210', location: 'Ambattur, Chennai' },
-  { id: 'AI-TN-1002', title: 'Water supply disruption', dept: 'CMWSSB', status: 'New', sev: 'Critical', date: '2026-06-04', desc: 'No water supply for 3 days in Thiruvallur block.', officer: 'Priya Sundaram', ph: '9876543211', location: 'Thiruvallur, Ward 4' },
-  { id: 'AI-TN-1003', title: 'Power outage – 12hrs', dept: 'TANGEDCO', status: 'Resolved', sev: 'High', date: '2026-06-02', desc: 'Entire sector 7 without power. Repeated complaint.', officer: 'Murugan K.', ph: '9876543212', location: 'Velachery, Sector 7' },
-  { id: 'AI-TN-1004', title: 'School building leak', dept: 'Education', status: 'Resolved', sev: 'Medium', date: '2026-06-01', desc: 'Roof leaking in Govt. Primary School, Kancheepuram.', officer: 'Lakshmi V.', ph: '9876543213', location: 'Kancheepuram, Street 2' },
-  { id: 'AI-TN-1005', title: 'Hospital medicine shortage', dept: 'Health', status: 'Escalated', sev: 'Critical', date: '2026-06-04', desc: 'PHC Villupuram out of essential antibiotics.', officer: 'Dr. Senthil', ph: '9876543216', location: 'Villupuram PHC' }
 ];
 
 const MOCK_EMERGENCIES = [
@@ -60,15 +52,12 @@ const MOCK_NOTIFICATIONS = [
   { icon: 'clipboard', iconClass: 'blue', title: 'New Complaint Registered', body: 'Complaint AI-TN-1002 (Water Board) logged.', time: '1 hr ago', unread: true }
 ];
 
-// Helper to initialize local storage database
-// Version 2: removes pre-populated dummy complaints so only user-created ones appear
+// Helper to initialize local storage for reference data only
 export function initDB() {
-  const CURRENT_VERSION = 'v2';
+  const CURRENT_VERSION = 'v3';
   const storedVersion = localStorage.getItem('tvk_db_version');
 
   if (storedVersion !== CURRENT_VERSION) {
-    // Migrate or fresh init: start with empty complaints, keep reference data
-    localStorage.setItem('tvk_complaints', JSON.stringify([]));
     localStorage.setItem('tvk_departments', JSON.stringify(MOCK_DEPARTMENTS));
     localStorage.setItem('tvk_emergencies', JSON.stringify(MOCK_EMERGENCIES));
     localStorage.setItem('tvk_officers', JSON.stringify(MOCK_OFFICERS));
@@ -78,13 +67,12 @@ export function initDB() {
   }
 }
 
-// Manual reset (for testing): call window.resetDB() in browser console
+// Manual reset (for testing)
 export function resetDB() {
   localStorage.removeItem('tvk_db_version');
-  localStorage.setItem('tvk_complaints', JSON.stringify([]));
   initDB();
   notifyDBChange();
-  console.log('[DB] Reset complete. Complaints cleared, reference data restored.');
+  console.log('[DB] Reset complete.');
 }
 
 if (typeof window !== 'undefined') {
@@ -94,30 +82,84 @@ if (typeof window !== 'undefined') {
 // Event dispatcher to notify other components/tabs of database changes
 function notifyDBChange() {
   window.dispatchEvent(new CustomEvent('tvk_db_update'));
-  // Trigger storage event so other tabs sync too
   localStorage.setItem('tvk_last_sync_time', Date.now().toString());
 }
 
+// Supabase fallback: if not configured, use localStorage for complaints
+function getLocalComplaints() {
+  return JSON.parse(localStorage.getItem('tvk_complaints') || '[]');
+}
+
+function saveLocalComplaints(arr) {
+  localStorage.setItem('tvk_complaints', JSON.stringify(arr));
+  notifyDBChange();
+}
+
+// Map frontend field "desc" to Supabase column "description"
+function toSupabaseRow(c) {
+  return {
+    id: c.id,
+    title: c.title,
+    dept: c.dept,
+    status: c.status,
+    sev: c.sev,
+    date: c.date,
+    description: c.description || c.desc || '',
+    location: c.location || '',
+    officer: c.officer || null,
+    ph: c.ph || null,
+    photo: c.photo || null
+  };
+}
+
+function fromSupabaseRow(r) {
+  return {
+    id: r.id,
+    title: r.title,
+    dept: r.dept,
+    status: r.status,
+    sev: r.sev,
+    date: r.date,
+    description: r.description || '',
+    location: r.location || '',
+    officer: r.officer || '',
+    ph: r.ph || '',
+    photo: r.photo || ''
+  };
+}
+
 export const db = {
-  getComplaints() {
+  // ----- Complaints: Supabase if configured, else localStorage -----
+  async getComplaints() {
     initDB();
-    return JSON.parse(localStorage.getItem('tvk_complaints') || '[]');
+    if (!isSupabaseConfigured()) return getLocalComplaints();
+    const { data, error } = await supabase.from('complaints').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('[DB] Supabase fetch failed, falling back to local:', error.message);
+      return getLocalComplaints();
+    }
+    return (data || []).map(fromSupabaseRow);
   },
-  
-  saveComplaint(complaint) {
-    const complaints = this.getComplaints();
-    const newId = `AI-TN-${1000 + complaints.length + 1}`;
+
+  async saveComplaint(complaint) {
+    const localComplaints = getLocalComplaints();
+    const newId = `AI-TN-${1000 + localComplaints.length + 1}`;
     const newComplaint = {
       id: newId,
       date: new Date().toISOString().split('T')[0],
       status: 'New',
       ...complaint
     };
-    
-    complaints.unshift(newComplaint);
-    localStorage.setItem('tvk_complaints', JSON.stringify(complaints));
-    
-    // Add default notification
+
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('complaints').insert(toSupabaseRow(newComplaint));
+      if (error) console.warn('[DB] Supabase insert failed:', error.message);
+    }
+
+    // Also save locally for offline fallback
+    localComplaints.unshift(newComplaint);
+    saveLocalComplaints(localComplaints);
+
     this.addNotification({
       icon: 'clipboard',
       iconClass: 'blue',
@@ -126,21 +168,28 @@ export const db = {
       time: 'Just now',
       unread: true
     });
-    
+
     notifyDBChange();
     return newComplaint;
   },
 
-  updateComplaint(id, updates) {
-    const complaints = this.getComplaints();
-    const index = complaints.findIndex(c => c.id === id);
+  async updateComplaint(id, updates) {
+    const localComplaints = getLocalComplaints();
+    const index = localComplaints.findIndex(c => c.id === id);
+    let oldStatus = 'New';
     if (index !== -1) {
-      const oldStatus = complaints[index].status;
-      complaints[index] = { ...complaints[index], ...updates };
-      const newStatus = complaints[index].status;
-      localStorage.setItem('tvk_complaints', JSON.stringify(complaints));
+      oldStatus = localComplaints[index].status;
+      localComplaints[index] = { ...localComplaints[index], ...updates };
+      saveLocalComplaints(localComplaints);
+    }
 
-      // Admin notification
+    if (isSupabaseConfigured()) {
+      const { error } = await supabase.from('complaints').update(updates).eq('id', id);
+      if (error) console.warn('[DB] Supabase update failed:', error.message);
+    }
+
+    const newStatus = updates.status || oldStatus;
+    if (updates.status && updates.status !== oldStatus) {
       this.addNotification({
         icon: 'check-circle',
         iconClass: 'green',
@@ -150,7 +199,6 @@ export const db = {
         unread: true
       });
 
-      // User-facing notification about their complaint status change
       const statusMessages = {
         'New': 'Your complaint has been received and is under review.',
         'In Progress': 'Field officer has been assigned. Work is now in progress.',
@@ -165,13 +213,13 @@ export const db = {
         time: 'Just now',
         unread: true
       });
-
-      notifyDBChange();
-      return complaints[index];
     }
-    return null;
+
+    notifyDBChange();
+    return index !== -1 ? localComplaints[index] : null;
   },
 
+  // ----- Reference data: stays in localStorage -----
   getDepartments() {
     initDB();
     return JSON.parse(localStorage.getItem('tvk_departments') || '[]');
