@@ -51,6 +51,7 @@ export default function UserApp() {
   const [voiceLang, setVoiceLang] = useState('en-IN'); // 'en-IN' or 'ta-IN'
   const chatEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const micTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -125,20 +126,28 @@ export default function UserApp() {
 
   // Real Web Speech API with Tamil/English support
   const handleMicClick = () => {
+    console.log('[Mic] Clicked. micActive=', micActive);
+
     if (micActive) {
-      // Stop ongoing recognition
+      console.log('[Mic] Stopping...');
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      if (micTimeoutRef.current) {
+        clearTimeout(micTimeoutRef.current);
+        micTimeoutRef.current = null;
       }
       setMicActive(false);
       return;
     }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    console.log('[Mic] SpeechRecognition available?', !!SpeechRecognition);
+
     if (!SpeechRecognition) {
-      // Fallback to simulation for unsupported browsers
+      console.log('[Mic] Browser unsupported. Using fallback simulation.');
       setMicActive(true);
-      setTimeout(() => {
+      micTimeoutRef.current = setTimeout(() => {
         const simulatedTranscripts = [
           "Drainage water is overflowing on Ambattur high road",
           "We have no water supply in our house since yesterday",
@@ -146,10 +155,12 @@ export default function UserApp() {
           "There is a huge pothole in Ward 14 causing traffic issues"
         ];
         const randomText = simulatedTranscripts[Math.floor(Math.random() * simulatedTranscripts.length)];
+        console.log('[Mic] Fallback transcript:', randomText);
         setChatInput(randomText);
         const detection = detectDepartment(randomText);
         if (detection.confidence > 15) setDetectedCategory(detection);
         setMicActive(false);
+        micTimeoutRef.current = null;
       }, 2200);
       return;
     }
@@ -157,43 +168,80 @@ export default function UserApp() {
     const recognition = new SpeechRecognition();
     recognition.lang = voiceLang;
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognitionRef.current = recognition;
 
-    recognition.onstart = () => setMicActive(true);
+    recognition.onstart = () => {
+      console.log('[Mic] Recognition started. Lang:', voiceLang);
+      setMicActive(true);
+      // Cancel the safety timeout since it started successfully
+      if (micTimeoutRef.current) {
+        clearTimeout(micTimeoutRef.current);
+        micTimeoutRef.current = null;
+      }
+    };
 
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
+      const transcript = Array.from(event.results)
+        .map(r => r[0].transcript)
+        .join('');
+      console.log('[Mic] Interim transcript:', transcript);
       setChatInput(transcript);
-      const detection = detectDepartment(transcript);
-      if (detection.confidence > 15) setDetectedCategory(detection);
     };
 
     recognition.onerror = (event) => {
-      console.warn('Speech recognition error:', event.error);
+      console.warn('[Mic] Error:', event.error);
+      setMicActive(false);
+      recognitionRef.current = null;
+      // Show a toast in chat so user knows what happened
+      if (event.error === 'not-allowed') {
+        setChatMessages(prev => [...prev, { sender: 'ai', text: '🎤 Microphone access denied. Please allow microphone permission in your browser settings, or type your complaint instead.', detection: null }]);
+      } else if (event.error === 'no-speech') {
+        setChatMessages(prev => [...prev, { sender: 'ai', text: '🎤 No speech detected. Please try speaking louder or closer to the microphone.', detection: null }]);
+      } else {
+        setChatMessages(prev => [...prev, { sender: 'ai', text: `🎤 Voice input error: ${event.error}. Please type your complaint instead.`, detection: null }]);
+      }
+    };
+
+    recognition.onend = () => {
+      console.log('[Mic] Recognition ended.');
       setMicActive(false);
       recognitionRef.current = null;
     };
 
-    recognition.onend = () => {
+    // Safety timeout: if onstart never fires, something blocked it
+    micTimeoutRef.current = setTimeout(() => {
+      console.warn('[Mic] Recognition did not start within 1s. Likely permission blocked or HTTPS required.');
       setMicActive(false);
       recognitionRef.current = null;
-    };
+      setChatMessages(prev => [...prev, {
+        sender: 'ai',
+        text: '🎤 Voice input blocked by your browser. This usually happens when:\n• The page is not on HTTPS (except localhost)\n• Microphone permission was previously denied\n• A browser extension is interfering\n\nPlease type your complaint instead, or check your browser permissions.',
+        detection: null
+      }]);
+    }, 1000);
 
     try {
       recognition.start();
     } catch (err) {
-      console.warn('Speech recognition start failed:', err);
+      console.warn('[Mic] Start failed:', err);
       setMicActive(false);
+      if (micTimeoutRef.current) {
+        clearTimeout(micTimeoutRef.current);
+        micTimeoutRef.current = null;
+      }
     }
   };
 
-  // Cleanup speech recognition on unmount
+  // Cleanup speech recognition and timeouts on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      if (micTimeoutRef.current) {
+        clearTimeout(micTimeoutRef.current);
       }
     };
   }, []);
@@ -451,7 +499,7 @@ export default function UserApp() {
 
       case 'ai-screen':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--off-white)' }}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--off-white)', position: 'relative' }}>
             <div className="ai-chat-hdr">
               <div className="user-hdr-bk" onClick={navigateBack} style={{ color: 'white', background: 'rgba(255,220,50,0.18)' }}><ArrowLeft size={18} /></div>
               <div className="ai-chat-avatar">🤖</div>
@@ -515,6 +563,46 @@ export default function UserApp() {
               )}
               <div ref={chatEndRef} />
             </div>
+
+            {/* Voice Listening Overlay (WhatsApp-style) */}
+            {micActive && (
+              <div 
+                onClick={handleMicClick}
+                style={{
+                  position: 'absolute',
+                  bottom: '70px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'linear-gradient(135deg, var(--red) 0%, var(--red-dark) 100%)',
+                  borderRadius: '28px',
+                  padding: '16px 28px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 8px 30px rgba(200,16,46,0.35)',
+                  zIndex: 100,
+                  cursor: 'pointer',
+                  animation: 'voicePopIn 0.3s ease',
+                  minWidth: '200px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '24px' }}>
+                  {[1,2,3,4,5].map(i => (
+                    <div key={i} style={{
+                      width: '4px',
+                      background: 'white',
+                      borderRadius: '2px',
+                      animation: `voiceBar ${0.6 + Math.random() * 0.4}s ease-in-out infinite alternate`,
+                      animationDelay: `${i * 0.1}s`,
+                      height: '60%'
+                    }} />
+                  ))}
+                </div>
+                <div style={{ color: 'white', fontSize: '13px', fontWeight: 700 }}>Listening...</div>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '10px' }}>Tap to stop</div>
+              </div>
+            )}
 
             {/* AI Assist helper suggestions */}
             {chatMessages.length === 1 && (

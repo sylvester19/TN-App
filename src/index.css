@@ -701,10 +701,26 @@ html, body, #root {
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.7);
   animation: mic-pulse 1s ease-out infinite;
+  pointer-events: none;
+}
+.ai-mic-btn:active {
+  transform: scale(0.95);
 }
 @keyframes mic-pulse {
   0% { transform: translate(-50%,-50%) scale(0.7); opacity: 1; }
   100% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; }
+}
+
+/* Voice Listening Overlay Animations */
+@keyframes voicePopIn {
+  0% { transform: translateX(-50%) scale(0.8); opacity: 0; }
+  60% { transform: translateX(-50%) scale(1.05); opacity: 1; }
+  100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+@keyframes voiceBar {
+  0% { height: 20%; }
+  100% { height: 100%; }
 }
 
 /* GPS Locator Button in Form */
