@@ -252,7 +252,12 @@ export default function UserApp() {
   const [complaintStep, setComplaintStep] = useState(1);
   const [gpsCaptured, setGpsCaptured] = useState(false);
   const [gpsCoordinates, setGpsCoordinates] = useState('');
-  
+  const [placeName, setPlaceName] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const locationSearchTimeout = useRef(null);
+
   const [complaintForm, setComplaintForm] = useState({
     title: '',
     dept: 'Municipal Corporation',
@@ -274,27 +279,101 @@ export default function UserApp() {
     navigate('complaint');
   };
 
-  const handleGPSCapture = () => {
+  // Reverse geocode lat/lng to place name using OpenStreetMap Nominatim (free, no API key)
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+        headers: { 'User-Agent': 'TN-App/1.0' }
+      });
+      const data = await res.json();
+      const address = data.display_name || data.name || `${lat}, ${lng}`;
+      const shortAddress = data.address
+        ? `${data.address.road || ''} ${data.address.suburb || data.address.neighbourhood || ''}, ${data.address.city || data.address.town || data.address.village || ''}, ${data.address.state || 'Tamil Nadu'}`.replace(/^\s+|\s+$/g, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '')
+        : address;
+      return shortAddress;
+    } catch (err) {
+      console.warn('Reverse geocode failed:', err);
+      return `${lat}, ${lng}`;
+    }
+  };
+
+  const handleGPSCapture = async () => {
     setGpsCoordinates('Capturing...');
+    setPlaceName('Detecting address...');
     if (!navigator.geolocation) {
       setGpsCoordinates('Geolocation not supported');
+      setPlaceName('');
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const lat = pos.coords.latitude.toFixed(5);
         const lng = pos.coords.longitude.toFixed(5);
         setGpsCoordinates(`Lat: ${lat}, Lng: ${lng}`);
+
+        const name = await reverseGeocode(lat, lng);
+        setPlaceName(name);
         setGpsCaptured(true);
-        setComplaintForm(prev => ({ ...prev, location: `GPS: ${lat}, ${lng}` }));
+        setComplaintForm(prev => ({ ...prev, location: name }));
       },
-      () => {
-        setGpsCoordinates('Denied/Failed (simulated: Lat: 13.0827, Lng: 80.2707)');
+      async () => {
+        // Fallback: Chennai coordinates
+        const lat = '13.0827';
+        const lng = '80.2707';
+        setGpsCoordinates(`Lat: ${lat}, Lng: ${lng}`);
+
+        const name = await reverseGeocode(lat, lng);
+        setPlaceName(name);
         setGpsCaptured(true);
-        setComplaintForm(prev => ({ ...prev, location: 'Lat: 13.0827, Lng: 80.2707 (Chennai)' }));
+        setComplaintForm(prev => ({ ...prev, location: name }));
       }
     );
+  };
+
+  // Search places via Nominatim autocomplete
+  const searchPlaces = async (query) => {
+    if (!query || query.length < 3) {
+      setLocationSuggestions([]);
+      return;
+    }
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Tamil Nadu, India')}&limit=5&addressdetails=1`, {
+        headers: { 'User-Agent': 'TN-App/1.0' }
+      });
+      const data = await res.json();
+      setLocationSuggestions(data.map(item => ({
+        display: item.display_name,
+        short: item.display_name.split(',')[0] + ', ' + (item.address?.city || item.address?.town || item.address?.village || '') + ', ' + (item.address?.state || 'Tamil Nadu'),
+        lat: item.lat,
+        lon: item.lon
+      })));
+      setShowSuggestions(true);
+    } catch (err) {
+      console.warn('Place search failed:', err);
+    }
+  };
+
+  const handleLocationSearchChange = (e) => {
+    const val = e.target.value;
+    setLocationSearch(val);
+    setComplaintForm(prev => ({ ...prev, location: val }));
+    setPlaceName(val);
+
+    if (locationSearchTimeout.current) clearTimeout(locationSearchTimeout.current);
+    locationSearchTimeout.current = setTimeout(() => {
+      searchPlaces(val);
+    }, 400);
+  };
+
+  const selectPlaceSuggestion = (suggestion) => {
+    setLocationSearch(suggestion.short);
+    setPlaceName(suggestion.short);
+    setGpsCoordinates(`Lat: ${parseFloat(suggestion.lat).toFixed(5)}, Lng: ${parseFloat(suggestion.lon).toFixed(5)}`);
+    setGpsCaptured(true);
+    setComplaintForm(prev => ({ ...prev, location: suggestion.short }));
+    setShowSuggestions(false);
+    setLocationSuggestions([]);
   };
 
   // Detect category automatically in step 3
@@ -687,6 +766,8 @@ export default function UserApp() {
               {complaintStep === 1 && (
                 <div>
                   <div className="sec-label">Capture Grievance Location</div>
+
+                  {/* GPS Capture Card */}
                   <div className="gps-card-btn" onClick={handleGPSCapture}>
                     <div className="gps-icon-circle">
                       {gpsCaptured ? <Check size={18} style={{ color: '#1b5e20' }} /> : <MapPin size={18} />}
@@ -696,21 +777,82 @@ export default function UserApp() {
                         {gpsCaptured ? 'GPS Location Captured' : 'Use Live GPS Location'}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--g600)' }}>
-                        {gpsCoordinates ? gpsCoordinates : 'Fetch coordinates automatically'}
+                        {placeName || (gpsCoordinates ? gpsCoordinates : 'Fetch coordinates & detect address automatically')}
                       </div>
                     </div>
                     {gpsCaptured && <span style={{ color: '#1b5e20', fontWeight: 800 }}>✓</span>}
                   </div>
 
-                  <div className="frow" style={{ marginTop: '16px' }}>
-                    <label className="flabel">Enter Location Manually</label>
-                    <input 
-                      className="finput" 
-                      value={complaintForm.location}
-                      onChange={(e) => setComplaintForm(prev => ({ ...prev, location: e.target.value }))}
-                      placeholder="Street, Ward, Area name" 
-                    />
+                  {/* OR Divider */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '16px 0' }}>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--g200)' }} />
+                    <span style={{ fontSize: '11px', color: 'var(--g400)', fontWeight: 600 }}>OR</span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--g200)' }} />
                   </div>
+
+                  {/* Place Search with Autocomplete */}
+                  <div className="frow" style={{ position: 'relative' }}>
+                    <label className="flabel">Search Location</label>
+                    <input
+                      className="finput"
+                      value={locationSearch}
+                      onChange={handleLocationSearchChange}
+                      onFocus={() => { if (locationSuggestions.length > 0) setShowSuggestions(true); }}
+                      placeholder="Type area name (e.g. Ambattur, T Nagar, Coimbatore)"
+                    />
+                    {showSuggestions && locationSuggestions.length > 0 && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        background: 'white',
+                        border: '1px solid var(--g200)',
+                        borderRadius: '10px',
+                        marginTop: '4px',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                        zIndex: 100,
+                        maxHeight: '220px',
+                        overflowY: 'auto'
+                      }}>
+                        {locationSuggestions.map((s, i) => (
+                          <div
+                            key={i}
+                            onClick={() => selectPlaceSuggestion(s)}
+                            style={{
+                              padding: '10px 14px',
+                              borderBottom: i < locationSuggestions.length - 1 ? '1px solid var(--g100)' : 'none',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              color: 'var(--g800)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--g100)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                          >
+                            <MapPin size={14} style={{ color: 'var(--red)', flexShrink: 0 }} />
+                            <span style={{ lineHeight: 1.4 }}>{s.short}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selected location display */}
+                  {placeName && (
+                    <div style={{ marginTop: '14px', padding: '10px 12px', background: 'var(--red-light)', borderRadius: '10px', border: '1px solid var(--red)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <MapPin size={14} style={{ color: 'var(--red)', flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)' }}>Selected Location</div>
+                        <div style={{ fontSize: '12px', color: 'var(--g800)' }}>{placeName}</div>
+                        {gpsCoordinates && (
+                          <div style={{ fontSize: '10px', color: 'var(--g400)', marginTop: '2px' }}>{gpsCoordinates}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
