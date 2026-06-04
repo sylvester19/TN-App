@@ -1823,6 +1823,12 @@ html, body, #root {
 /* MOBILE ADMIN APP — FULL RESPONSIVE         */
 /* ========================================== */
 
+/* Hide mobile elements on desktop by default */
+.admin-mobile-header,
+.admin-mobile-nav {
+  display: none;
+}
+
 @media (max-width: 768px) {
   /* Hide desktop sidebar */
   .admin-sidebar {
