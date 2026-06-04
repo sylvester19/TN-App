@@ -952,16 +952,71 @@ export default function UserApp() {
               {complaintStep === 4 && (
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
                   <div className="sec-label">Attach Photo Evidence</div>
-                  <div style={{ border: '2px dashed var(--g300)', padding: '40px 20px', borderRadius: '14px', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--white)', cursor: 'pointer' }} onClick={() => setComplaintForm(prev => ({ ...prev, photo: 'attached_image.jpg' }))}>
-                    <Camera size={44} style={{ color: 'var(--g400)', marginBottom: '14px' }} />
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--g800)' }}>
-                      {complaintForm.photo ? '✓ Photo Attached' : 'Capture or Upload Photo'}
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'var(--g400)', marginTop: '4px' }}>PNG, JPG, max 5MB</span>
-                  </div>
-                  {complaintForm.photo && (
-                    <div style={{ marginTop: '14px', fontSize: '12px', color: '#1b5e20', fontWeight: 700 }}>
-                      📸 photo_evidence_2026.jpg attached successfully!
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    id="complaint-photo-input"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      if (file.size > 5 * 1024 * 1024) {
+                        alert('Image too large. Max 5MB.');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        setComplaintForm(prev => ({ ...prev, photo: ev.target.result }));
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+
+                  {!complaintForm.photo ? (
+                    <div
+                      style={{ border: '2px dashed var(--g300)', padding: '40px 20px', borderRadius: '14px', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'var(--white)', cursor: 'pointer' }}
+                      onClick={() => document.getElementById('complaint-photo-input').click()}
+                    >
+                      <Camera size={44} style={{ color: 'var(--g400)', marginBottom: '14px' }} />
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--g800)' }}>Capture or Upload Photo</span>
+                      <span style={{ fontSize: '11px', color: 'var(--g400)', marginTop: '4px' }}>PNG, JPG, max 5MB</span>
+                    </div>
+                  ) : (
+                    <div style={{ position: 'relative', borderRadius: '14px', overflow: 'hidden', border: '2px solid var(--g200)' }}>
+                      <img
+                        src={complaintForm.photo}
+                        alt="Evidence preview"
+                        style={{ width: '100%', height: '200px', objectFit: 'cover', display: 'block' }}
+                      />
+                      <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setComplaintForm(prev => ({ ...prev, photo: null }));
+                            document.getElementById('complaint-photo-input').value = '';
+                          }}
+                          style={{
+                            background: 'rgba(0,0,0,0.6)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: '16px'
+                          }}
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                      <div style={{ padding: '8px', background: 'var(--white)', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Check size={14} style={{ color: 'var(--success)' }} />
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#1b5e20' }}>Photo attached</span>
+                      </div>
                     </div>
                   )}
                 </div>
