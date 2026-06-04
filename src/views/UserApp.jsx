@@ -904,52 +904,37 @@ export default function UserApp() {
               </div>
 
               {/* Case tracking list */}
-              {complaintMessages.map(c => (
-                <div key={c.id} className="card" style={{ cursor: 'pointer' }} onClick={() => setSelectedRequest(c)}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '7px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)', fontFamily: 'monospace', background: 'var(--red-light)', padding: '2px 8px', borderRadius: '6px' }}>{c.id}</span>
-                    <span className={`badge badge-${c.status === 'Resolved' ? 'resolved' : c.status === 'New' ? 'new' : 'progress'}`}>{c.status}</span>
+              {complaintMessages.map(c => {
+                const progressPct = c.status === 'New' ? 25 : c.status === 'In Progress' ? 60 : c.status === 'Escalated' ? 75 : c.status === 'Resolved' ? 100 : 0;
+                const statusColor = c.status === 'Resolved' ? 'var(--success)' : c.status === 'Escalated' ? 'var(--warning)' : c.status === 'New' ? 'var(--info)' : 'var(--red)';
+                return (
+                  <div key={c.id} className="card" style={{ cursor: 'pointer' }} onClick={() => setSelectedRequest(c)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '7px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--red)', fontFamily: 'monospace', background: 'var(--red-light)', padding: '2px 8px', borderRadius: '6px' }}>{c.id}</span>
+                      <span className={`badge badge-${c.status === 'Resolved' ? 'resolved' : c.status === 'New' ? 'new' : 'progress'}`}>{c.status}</span>
+                    </div>
+                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--g800)', marginBottom: '3px' }}>{c.title}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--g400)' }}>Dept: {c.dept} · Filed: {c.date}</div>
+
+                    {/* Mini progress bar */}
+                    <div style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--g400)', fontWeight: 600 }}>Progress</span>
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: statusColor }}>{progressPct}%</span>
+                      </div>
+                      <div style={{ height: '5px', background: 'var(--g100)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          borderRadius: '3px',
+                          background: c.status === 'Resolved' ? 'var(--success)' : 'linear-gradient(90deg, var(--red) 0%, var(--gold) 100%)',
+                          width: `${progressPct}%`,
+                          transition: 'width 0.6s ease'
+                        }} />
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--g800)', marginBottom: '3px' }}>{c.title}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--g400)' }}>Dept: {c.dept} · Filed: {c.date}</div>
-                  
-                  {/* Visual Timeline strip */}
-                  <div style={{ display: 'flex', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--g100)' }}>
-                    {['Received', 'Assigned', 'In Progress', 'Resolved'].map((step, idx) => {
-                      const isDone = (c.status === 'Resolved') || 
-                                     (c.status === 'In Progress' && idx <= 2) || 
-                                     (c.status === 'New' && idx === 0) || 
-                                     (c.status === 'Escalated' && idx <= 2);
-                      const isActive = (c.status === 'New' && idx === 0) || 
-                                       (c.status === 'In Progress' && idx === 2) || 
-                                       (c.status === 'Resolved' && idx === 3);
-                      return (
-                        <div key={step} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
-                          <div 
-                            style={{ 
-                              width: '18px', 
-                              height: '18px', 
-                              borderRadius: '50%', 
-                              background: isDone ? 'var(--red)' : 'var(--g200)', 
-                              color: isDone ? 'white' : 'var(--g400)', 
-                              fontSize: '8px', 
-                              fontWeight: 700, 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              border: isActive ? '2px solid var(--gold-bright)' : 'none',
-                              zIndex: 2
-                            }}
-                          >
-                            {idx + 1}
-                          </div>
-                          <span style={{ fontSize: '8px', color: 'var(--g400)', marginTop: '3px', textAlign: 'center' }}>{step}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Complaint Detail Modal */}
@@ -971,20 +956,44 @@ export default function UserApp() {
                       </div>
                     </div>
 
+                    {/* Progress Bar */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--g600)' }}>Resolution Progress</span>
+                        <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--red)' }}>
+                          {selectedRequest.status === 'New' ? '25%' : selectedRequest.status === 'In Progress' ? '60%' : selectedRequest.status === 'Escalated' ? '75%' : selectedRequest.status === 'Resolved' ? '100%' : '0%'}
+                        </span>
+                      </div>
+                      <div style={{ height: '8px', background: 'var(--g200)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%',
+                          borderRadius: '4px',
+                          background: selectedRequest.status === 'Resolved' ? 'var(--success)' : 'linear-gradient(90deg, var(--red) 0%, var(--gold) 100%)',
+                          width: selectedRequest.status === 'New' ? '25%' : selectedRequest.status === 'In Progress' ? '60%' : selectedRequest.status === 'Escalated' ? '75%' : selectedRequest.status === 'Resolved' ? '100%' : '0%',
+                          transition: 'width 0.6s ease'
+                        }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--g400)' }}>New</span>
+                        <span style={{ fontSize: '10px', color: 'var(--g400)' }}>In Progress</span>
+                        <span style={{ fontSize: '10px', color: 'var(--g400)' }}>Resolved</span>
+                      </div>
+                    </div>
+
                     <div className="sec-label" style={{ margin: '0 0 10px' }}>Resolution Timeline</div>
                     <div className="admin-timeline">
                       <div className="admin-tl-item">
                         <div className="admin-tl-dot">1</div>
                         <div className="admin-tl-content">
                           <div className="admin-tl-title">Grievance Registered</div>
-                          <div className="admin-tl-time">{selectedRequest.date} · Auto-routed using AI detection logic</div>
+                          <div className="admin-tl-time">{selectedRequest.date} · Auto-routed to {selectedRequest.dept}</div>
                         </div>
                       </div>
                       <div className="admin-tl-item">
                         <div className="admin-tl-dot" style={{ background: selectedRequest.status !== 'New' ? 'var(--red)' : 'var(--g200)' }}>2</div>
                         <div className="admin-tl-content">
                           <div className="admin-tl-title">Department Review</div>
-                          <div className="admin-tl-time">Viewed and assigned to supervisor</div>
+                          <div className="admin-tl-time">{selectedRequest.status !== 'New' ? 'Reviewed by department supervisor' : 'Pending review'}</div>
                         </div>
                       </div>
                       <div className="admin-tl-item">
@@ -992,15 +1001,15 @@ export default function UserApp() {
                         <div className="admin-tl-content">
                           <div className="admin-tl-title">Officer Assigned</div>
                           <div className="admin-tl-time">
-                            {selectedRequest.officer ? `Assigned to ${selectedRequest.officer} (PH: ${selectedRequest.ph})` : 'Awaiting officer dispatch'}
+                            {selectedRequest.officer ? `Assigned to ${selectedRequest.officer}` : 'Awaiting officer dispatch'}
                           </div>
                         </div>
                       </div>
                       <div className="admin-tl-item">
-                        <div className="admin-tl-dot" style={{ background: selectedRequest.status === 'Resolved' ? 'var(--red)' : 'var(--g200)' }}>4</div>
+                        <div className="admin-tl-dot" style={{ background: selectedRequest.status === 'Resolved' ? 'var(--success)' : 'var(--g200)' }}>4</div>
                         <div className="admin-tl-content">
                           <div className="admin-tl-title">Resolution Outcome</div>
-                          <div className="admin-tl-time">{selectedRequest.status === 'Resolved' ? 'Resolved successfully. Closed.' : 'Awaiting action completion'}</div>
+                          <div className="admin-tl-time">{selectedRequest.status === 'Resolved' ? '✅ Resolved successfully. Closed.' : selectedRequest.status === 'Escalated' ? '⚠️ Escalated to senior authorities' : 'Awaiting action completion'}</div>
                         </div>
                       </div>
                     </div>

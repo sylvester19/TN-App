@@ -117,19 +117,37 @@ export const db = {
     const complaints = this.getComplaints();
     const index = complaints.findIndex(c => c.id === id);
     if (index !== -1) {
+      const oldStatus = complaints[index].status;
       complaints[index] = { ...complaints[index], ...updates };
+      const newStatus = complaints[index].status;
       localStorage.setItem('tvk_complaints', JSON.stringify(complaints));
-      
-      // Notify
+
+      // Admin notification
       this.addNotification({
         icon: 'check-circle',
         iconClass: 'green',
         title: `Complaint ${id} Updated`,
-        body: `Status changed to ${updates.status || complaints[index].status}`,
+        body: `Status changed from ${oldStatus} to ${newStatus}`,
         time: 'Just now',
         unread: true
       });
-      
+
+      // User-facing notification about their complaint status change
+      const statusMessages = {
+        'New': 'Your complaint has been received and is under review.',
+        'In Progress': 'Field officer has been assigned. Work is now in progress.',
+        'Escalated': 'Your complaint has been escalated to senior authorities for faster resolution.',
+        'Resolved': 'Your complaint has been resolved successfully!'
+      };
+      this.addNotification({
+        icon: newStatus === 'Resolved' ? 'check-circle' : newStatus === 'Escalated' ? 'alert-triangle' : 'siren',
+        iconClass: newStatus === 'Resolved' ? 'green' : 'gold',
+        title: `Complaint ${id}: ${newStatus}`,
+        body: statusMessages[newStatus] || `Status updated to ${newStatus}`,
+        time: 'Just now',
+        unread: true
+      });
+
       notifyDBChange();
       return complaints[index];
     }
