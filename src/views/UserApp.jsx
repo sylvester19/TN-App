@@ -50,8 +50,9 @@ export default function UserApp() {
   const [detectedCategory, setDetectedCategory] = useState(null);
   const [voiceLang, setVoiceLang] = useState('en-IN'); // 'en-IN' or 'ta-IN'
   const chatEndRef = useRef(null);
-  const recognitionRef = useRef(null);
-  const micTimeoutRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -124,124 +125,159 @@ export default function UserApp() {
     triggerAIResponse(textToSend);
   };
 
-  // Real Web Speech API with Tamil/English support
-  const handleMicClick = () => {
-    console.log('[Mic] Clicked. micActive=', micActive);
-
-    if (micActive) {
-      console.log('[Mic] Stopping...');
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
-      }
-      if (micTimeoutRef.current) {
-        clearTimeout(micTimeoutRef.current);
-        micTimeoutRef.current = null;
-      }
-      setMicActive(false);
-      return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    console.log('[Mic] SpeechRecognition available?', !!SpeechRecognition);
-
-    if (!SpeechRecognition) {
-      console.log('[Mic] Browser unsupported. Using fallback simulation.');
-      setMicActive(true);
-      micTimeoutRef.current = setTimeout(() => {
-        const simulatedTranscripts = [
-          "Drainage water is overflowing on Ambattur high road",
-          "We have no water supply in our house since yesterday",
-          "Our street light is off and there is short circuit risk in transformer",
-          "There is a huge pothole in Ward 14 causing traffic issues"
-        ];
-        const randomText = simulatedTranscripts[Math.floor(Math.random() * simulatedTranscripts.length)];
-        console.log('[Mic] Fallback transcript:', randomText);
-        setChatInput(randomText);
-        const detection = detectDepartment(randomText);
-        if (detection.confidence > 15) setDetectedCategory(detection);
-        setMicActive(false);
-        micTimeoutRef.current = null;
-      }, 2200);
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = voiceLang;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognitionRef.current = recognition;
-
-    recognition.onstart = () => {
-      console.log('[Mic] Recognition started. Lang:', voiceLang);
-      setMicActive(true);
-      // Cancel the safety timeout since it started successfully
-      if (micTimeoutRef.current) {
-        clearTimeout(micTimeoutRef.current);
-        micTimeoutRef.current = null;
-      }
-    };
-
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map(r => r[0].transcript)
-        .join('');
-      console.log('[Mic] Interim transcript:', transcript);
-      setChatInput(transcript);
-    };
-
-    recognition.onerror = (event) => {
-      console.warn('[Mic] Error:', event.error);
-      setMicActive(false);
-      recognitionRef.current = null;
-      // Show a toast in chat so user knows what happened
-      if (event.error === 'not-allowed') {
-        setChatMessages(prev => [...prev, { sender: 'ai', text: '🎤 Microphone access denied. Please allow microphone permission in your browser settings, or type your complaint instead.', detection: null }]);
-      } else if (event.error === 'no-speech') {
-        setChatMessages(prev => [...prev, { sender: 'ai', text: '🎤 No speech detected. Please try speaking louder or closer to the microphone.', detection: null }]);
-      } else {
-        setChatMessages(prev => [...prev, { sender: 'ai', text: `🎤 Voice input error: ${event.error}. Please type your complaint instead.`, detection: null }]);
-      }
-    };
-
-    recognition.onend = () => {
-      console.log('[Mic] Recognition ended.');
-      setMicActive(false);
-      recognitionRef.current = null;
-    };
-
-    // Safety timeout: if onstart never fires, something blocked it
-    micTimeoutRef.current = setTimeout(() => {
-      console.warn('[Mic] Recognition did not start within 1s. Likely permission blocked or HTTPS required.');
-      setMicActive(false);
-      recognitionRef.current = null;
+  // MediaRecorder + Groq Whisper API — works on ALL browsers
+  const sendToWhisper = async (audioBlob) => {
+    const apiKey = settings.llmApiKey;
+    if (!apiKey) {
       setChatMessages(prev => [...prev, {
         sender: 'ai',
-        text: '🎤 Voice input blocked by your browser. This usually happens when:\n• The page is not on HTTPS (except localhost)\n• Microphone permission was previously denied\n• A browser extension is interfering\n\nPlease type your complaint instead, or check your browser permissions.',
+        text: '🔑 Voice transcription requires a Groq API key. Please add it in Settings or type your complaint instead.',
         detection: null
       }]);
-    }, 1000);
+      return;
+    }
+
+    setChatMessages(prev => [...prev, {
+      sender: 'ai',
+      text: '🎙️ Transcribing your voice...',
+      detection: null
+    }]);
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('model', 'whisper-large-v3');
+    formData.append('response_format', 'json');
+    // Whisper language codes: 'ta' for Tamil, 'en' for English
+    const whisperLang = voiceLang.startsWith('ta') ? 'ta' : 'en';
+    formData.append('language', whisperLang);
 
     try {
-      recognition.start();
-    } catch (err) {
-      console.warn('[Mic] Start failed:', err);
-      setMicActive(false);
-      if (micTimeoutRef.current) {
-        clearTimeout(micTimeoutRef.current);
-        micTimeoutRef.current = null;
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn('[Whisper] API error:', res.status, errText);
+        throw new Error(`API error ${res.status}`);
       }
+
+      const data = await res.json();
+      const transcript = data.text || '';
+      console.log('[Whisper] Transcript:', transcript);
+
+      // Remove the "transcribing..." message and add the result
+      setChatMessages(prev => {
+        const filtered = prev.filter(m => m.text !== '🎙️ Transcribing your voice...');
+        return [...filtered, {
+          sender: 'ai',
+          text: `🎙️ I heard: "${transcript}"`,
+          detection: null
+        }];
+      });
+
+      setChatInput(transcript);
+      const detection = detectDepartment(transcript);
+      if (detection.confidence > 15) setDetectedCategory(detection);
+
+    } catch (err) {
+      console.warn('[Whisper] Failed:', err);
+      setChatMessages(prev => {
+        const filtered = prev.filter(m => m.text !== '🎙️ Transcribing your voice...');
+        return [...filtered, {
+          sender: 'ai',
+          text: '🎙️ Voice transcription failed. Please type your complaint instead.',
+          detection: null
+        }];
+      });
     }
   };
 
-  // Cleanup speech recognition and timeouts on unmount
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
+        : '';
+
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+        if (audioBlob.size > 1000) {
+          sendToWhisper(audioBlob);
+        } else {
+          setChatMessages(prev => [...prev, {
+            sender: 'ai',
+            text: '�️ Recording too short. Please hold the mic button longer.',
+            detection: null
+          }]);
+        }
+        mediaRecorderRef.current = null;
+      };
+
+      mediaRecorder.start(100); // collect data every 100ms
+      setMicActive(true);
+
+      // Auto-stop after 30 seconds max
+      recordingTimerRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          setMicActive(false);
+        }
+      }, 30000);
+
+    } catch (err) {
+      console.warn('[Mic] getUserMedia failed:', err);
+      setMicActive(false);
+      setChatMessages(prev => [...prev, {
+        sender: 'ai',
+        text: '🎤 Microphone access denied. Please allow microphone permission in your browser settings, or type your complaint instead.',
+        detection: null
+      }]);
+    }
+  };
+
+  const stopRecording = () => {
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    setMicActive(false);
+  };
+
+  const handleMicClick = () => {
+    if (micActive) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) {}
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
       }
-      if (micTimeoutRef.current) {
-        clearTimeout(micTimeoutRef.current);
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
       }
     };
   }, []);
