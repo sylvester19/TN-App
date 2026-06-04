@@ -439,19 +439,19 @@ export default function UserApp() {
 
   const [submittedId, setSubmittedId] = useState('');
 
-  const handleSubmitComplaint = () => {
+  const handleSubmitComplaint = async () => {
     const newComplaint = {
       title: complaintForm.title || `Issue reported at ${complaintForm.location || 'Chennai'}`,
       dept: complaintForm.dept,
       sev: complaintForm.sev,
       description: complaintForm.desc,
       location: complaintForm.location || 'Captured Location',
-      photo: 'attached_image.jpg'
+      photo: complaintForm.photo || null
     };
-    
-    const saved = addComplaint(newComplaint);
+
+    const saved = await addComplaint(newComplaint);
     setSubmittedId(saved.id);
-    
+
     // Clear Form
     setComplaintForm({
       title: '',
@@ -463,9 +463,12 @@ export default function UserApp() {
     });
     setGpsCaptured(false);
     setGpsCoordinates('');
+    setPlaceName('');
+    setLocationSearch('');
+    setLocationSuggestions([]);
     setComplaintStep(1);
-    
-    setComplaintMessages(prev => [saved, ...prev]);
+
+    // complaintMessages auto-syncs from complaints via useEffect
     setActiveScreen('success-screen');
   };
 
