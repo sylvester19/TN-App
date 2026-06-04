@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { 
   LayoutGrid, Building2, ClipboardList, AlertOctagon, Users, BarChart3, 
   FileSpreadsheet, Terminal, Bell, Settings, Search, RefreshCw, X, Check,
-  ArrowRight, Moon, Sun, Play, Download
+  ArrowRight, Moon, Sun, Play, Download, Menu, ArrowLeft
 } from 'lucide-react';
 
 export default function AdminApp() {
@@ -59,6 +59,7 @@ export default function AdminApp() {
   // Modals & Panels State
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [selectedDept, setSelectedDept] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Filters State
   const [compSearch, setCompSearch] = useState('');
@@ -677,9 +678,30 @@ export default function AdminApp() {
     settings: 'System Configuration',
   };
 
+  // Mobile bottom nav items (5 primary tabs)
+  const mobileNavItems = [
+    { key: 'dashboard', label: 'Home', icon: LayoutGrid },
+    { key: 'complaints', label: 'Grievances', icon: ClipboardList, badge: complaints.filter(c => c.status === 'New').length },
+    { key: 'officers', label: 'Officers', icon: Users },
+    { key: 'notifications', label: 'Alerts', icon: Bell, badge: notifications.filter(n => n.unread).length },
+    { key: 'more', label: 'More', icon: Menu },
+  ];
+
   return (
     <div className="admin-desktop-layout">
-      {/* Sidebar */}
+      {/* Mobile Header — visible only on mobile via CSS */}
+      <div className="admin-mobile-header">
+        <div style={{ fontSize: '20px', fontWeight: 800 }}>TN</div>
+        <div className="admin-mobile-header-title">{tabTitles[activeTab] || 'Dashboard'}</div>
+        <div className="admin-mobile-header-icon" onClick={() => handleNav('notifications')}>
+          <Bell size={18} />
+          {notifications.filter(n => n.unread).length > 0 && (
+            <div className="admin-mobile-header-badge">{notifications.filter(n => n.unread).length}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar — hidden on mobile via CSS */}
       <aside className="admin-sidebar">
         <div className="admin-sidebar-brand">
           <div className="admin-sidebar-brand-icon">TN</div>
@@ -711,7 +733,7 @@ export default function AdminApp() {
 
       {/* Main Content Area */}
       <div className="admin-main">
-        {/* Topbar */}
+        {/* Topbar — hidden on mobile via CSS */}
         <header className="admin-topbar">
           <div className="admin-topbar-title">{tabTitles[activeTab] || 'Dashboard'}</div>
           <div className="admin-topbar-right">
@@ -737,7 +759,106 @@ export default function AdminApp() {
         </main>
       </div>
 
-      {/* Complaint Detail Modal */}
+      {/* Mobile Bottom Navigation */}
+      <nav className="admin-mobile-nav">
+        {mobileNavItems.map(item => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.key || (item.key === 'more' && mobileMenuOpen);
+          return (
+            <div
+              key={item.key}
+              className={`admin-mobile-nav-item ${isActive ? 'active' : ''}`}
+              onClick={() => {
+                if (item.key === 'more') {
+                  setMobileMenuOpen(true);
+                } else {
+                  setMobileMenuOpen(false);
+                  handleNav(item.key);
+                }
+              }}
+            >
+              <Icon size={20} />
+              <span>{item.label}</span>
+              {item.badge > 0 && <div className="admin-mobile-nav-badge">{item.badge}</div>}
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* Mobile More Menu Drawer */}
+      {mobileMenuOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: 2000,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end'
+          }}
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '24px 24px 0 0',
+              padding: '20px',
+              maxHeight: '70vh',
+              overflowY: 'auto',
+              animation: 'modalSlideUp 0.25s ease'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800 }}>All Sections</div>
+              <div onClick={() => setMobileMenuOpen(false)} style={{ cursor: 'pointer', padding: '4px' }}>
+                <X size={20} style={{ color: 'var(--g400)' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {navItems.map(item => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.key;
+                return (
+                  <div
+                    key={item.key}
+                    onClick={() => { handleNav(item.key); setMobileMenuOpen(false); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px',
+                      borderRadius: '10px',
+                      background: isActive ? 'var(--red-light)' : 'transparent',
+                      color: isActive ? 'var(--red)' : 'var(--g800)',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: isActive ? 700 : 500
+                    }}
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                    {item.badge > 0 && (
+                      <span style={{
+                        marginLeft: 'auto',
+                        background: 'var(--red)',
+                        color: 'white',
+                        borderRadius: '10px',
+                        padding: '2px 8px',
+                        fontSize: '10px',
+                        fontWeight: 700
+                      }}>{item.badge}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Complaint Detail Modal — CSS makes it bottom sheet on mobile */}
       {selectedComplaint && (
         <div className="admin-modal-overlay-desktop" onClick={() => setSelectedComplaint(null)}>
           <div className="admin-modal-desktop" onClick={(e) => e.stopPropagation()}>
@@ -801,7 +922,7 @@ export default function AdminApp() {
         </div>
       )}
 
-      {/* Department Detail Modal */}
+      {/* Department Detail Modal — CSS makes it bottom sheet on mobile */}
       {selectedDept && (
         <div className="admin-modal-overlay-desktop" onClick={() => setSelectedDept(null)}>
           <div className="admin-modal-desktop" onClick={(e) => e.stopPropagation()}>
@@ -850,7 +971,7 @@ export default function AdminApp() {
       )}
 
       {/* Live Toast Notifications */}
-      <div style={{ position: 'fixed', top: '80px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'none' }}>
+      <div className="admin-toast-container" style={{ position: 'fixed', top: '80px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'none' }}>
         {toasts.map(t => (
           <div 
             key={t.id}
